@@ -1,4 +1,4 @@
-from models import Task  # noqa
+from model import Task  # noqa
 import os
 from datetime import datetime, timezone
 
@@ -9,7 +9,7 @@ import redis
 
 app = Flask(__name__)
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://taskuser:taskpass@database:5432/taskdb")
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://taskuser:taskpass@db:5432/taskdb")
 REDIS_URL = os.environ["REDIS_URL"]
 
 search_history = []
@@ -62,7 +62,7 @@ def list_tasks():
     conditions = []
     params = []
     if status:
-        conditions.append("active = true" if status == "active" else "active = false")
+        conditions.append("is_active = true" if status == "active" else "is_active = false")
     if today_only:
         conditions.append("DATE(created_at) = DATE(%s)")
         params.append(datetime.now())
@@ -168,13 +168,23 @@ def get_stats():
     return jsonify(dict(stats))
 
 def warmup_cache():
-    try:
-        r = redis.from_url(REDIS_URL)
-        r.ping()
-        import urllib.request
-        urllib.request.urlopen("http://localhost:8000/api/stats")
-    except Exception as e:
-        print(f"Cache warmup failed (non-critical): {e}")
+    """Préchauffage du cache Redis au démarrage (exécuté dans un thread séparé)."""
+    import threading
+    import time
+
+    def _warmup():
+        # Attendre que le serveur soit prêt avant de l'appeler
+        time.sleep(5)
+        try:
+            r = redis.from_url(REDIS_URL)
+            r.ping()
+            import urllib.request
+            urllib.request.urlopen("http://localhost:8000/api/stats", timeout=5)
+        except Exception as e:
+            print(f"Cache warmup failed (non-critical): {e}")
+
+    thread = threading.Thread(target=_warmup, daemon=True)
+    thread.start()
 
 warmup_cache()
 
