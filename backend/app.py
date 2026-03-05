@@ -143,6 +143,8 @@ def delete_task(task_id):
     db = get_db()
     cur = db.cursor()
     cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
+    if cur.rowcount == 0:
+        return jsonify({"error": "Task not found"}), 404
     r = get_redis()
     r.delete("stats")
     return "", 204
