@@ -6,7 +6,7 @@ import SearchBar from './components/SearchBar';
 import Stats from './components/Stats';
 import './App.css';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'http://localhost:8000/api';
 
 function App() {
   const [tasks, setTasks] = useState([]);
@@ -17,7 +17,7 @@ function App() {
     try {
       setLoading(true);
       const params = {};
-      if (filter !== 'all') params.status = filter;
+      if (filter === 'active' || filter === 'done') params.status = filter;
       if (filter === 'today') params.today = new Date().toISOString().split('T')[0];
       const res = await axios.get(`${API_URL}/tasks`, { params });
       setTasks(res.data);
@@ -46,7 +46,7 @@ function App() {
   };
 
   return (
-    <div className="app">
+    <div className="app" data-api-path="/api/tasks">
       <header><h1>📋 Task Manager</h1><Stats apiUrl={API_URL} /></header>
       <main>
         <SearchBar onSearch={searchTasks} />

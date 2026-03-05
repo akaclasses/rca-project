@@ -55,6 +55,19 @@ jobs:
         run: python3 checks/run_checks.py
         continue-on-error: true
 
+      - name: Run Pytest (Backend)
+        if: always()
+        run: docker compose exec -T backend pytest
+        continue-on-error: true
+
+      - name: Run Jest (Frontend)
+        if: always()
+        working-directory: ./frontend
+        run: |
+          npm ci || npm install
+          CI=true npm test
+        continue-on-error: true
+
       - name: Publish report
         if: always()
         run: |
