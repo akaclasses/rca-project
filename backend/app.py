@@ -1,32 +1,40 @@
-from models import Task  # noqa
+from model import Task  # noqa
+import json
 import os
+from collections import deque
 from datetime import datetime, timezone
 
 from flask import Flask, jsonify, request, g
+from flask_cors import CORS
 import psycopg2
 import psycopg2.extras
 import redis
 
 app = Flask(__name__)
+CORS(app)
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://taskuser:taskpass@database:5432/taskdb")
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://taskuser:taskpass@db:5432/taskdb")
 REDIS_URL = os.environ["REDIS_URL"]
 
-search_history = []
+MAX_SEARCH_HISTORY = 100
+search_history: deque = deque(maxlen=MAX_SEARCH_HISTORY)
 
-def get_db():
+def get_db() -> psycopg2.extensions.connection:
+    """Retourne la connexion PostgreSQL pour la requête en cours."""
     if "db" not in g:
         g.db = psycopg2.connect(DATABASE_URL)
         g.db.autocommit = True
     return g.db
 
-def get_redis():
+def get_redis() -> redis.Redis:  # type: ignore[type-arg]
+    """Retourne le client Redis pour la requête en cours."""
     if "redis" not in g:
         g.redis = redis.from_url(REDIS_URL)
     return g.redis
 
 @app.teardown_appcontext
-def close_db(exception):
+def close_db(exception: BaseException | None) -> None:
+    """Ferme la connexion PostgreSQL à la fin du contexte applicatif."""
     db = g.pop("db", None)
     if db is not None:
         db.close()
@@ -49,23 +57,45 @@ def after_request(response):
     return response
 
 @app.route("/health")
-def health():
-    return jsonify({"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()})
+def health() -> tuple:
+    """Endpoint de vérification de santé de l'application."""
+    result = {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+    # Vérifier la connexion à la base de données
+    try:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("SELECT 1")
+        cur.close()
+        result["database"] = "ok"
+    except Exception:
+        result["database"] = "error"
+        result["status"] = "degraded"
+    # Vérifier la connexion Redis
+    try:
+        r = get_redis()
+        r.ping()
+        result["redis"] = "ok"
+    except Exception:
+        result["redis"] = "error"
+        result["status"] = "degraded"
+    return jsonify(result)
 
 @app.route("/api/tasks", methods=["GET"])
-def list_tasks():
+def list_tasks() -> tuple:
+    """Liste toutes les tâches avec filtrage optionnel par statut ou date."""
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     status = request.args.get("status")
     today_only = request.args.get("today")
+    filter_param = request.args.get("filter")
     query = "SELECT * FROM tasks"
     conditions = []
     params = []
     if status:
-        conditions.append("active = true" if status == "active" else "active = false")
-    if today_only:
+        conditions.append("is_active = true" if status == "active" else "is_active = false")
+    if today_only or filter_param == "today":
         conditions.append("DATE(created_at) = DATE(%s)")
-        params.append(datetime.now())
+        params.append(datetime.now(timezone.utc))
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
     query += " ORDER BY created_at DESC"
@@ -82,12 +112,22 @@ def list_tasks():
     return jsonify(result)
 
 @app.route("/api/tasks", methods=["POST"])
-def create_task():
+def create_task() -> tuple:
+    """Crée une nouvelle tâche à partir des données JSON fournies."""
     data = request.get_json()
     if not data or not data.get("title"):
         return jsonify({"error": "Title is required"}), 400
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    # Vérifier si une tâche avec le même titre existe déjà
+    cur.execute("SELECT * FROM tasks WHERE title = %s", (data["title"],))
+    existing = cur.fetchone()
+    if existing:
+        return jsonify({
+            "id": existing["id"], "title": existing["title"], "description": existing["description"],
+            "is_active": existing["is_active"], "created_at": existing["created_at"].isoformat(),
+            "updated_at": existing["updated_at"].isoformat(),
+        }), 200
     cur.execute(
         "INSERT INTO tasks (title, description, is_active, created_at, updated_at) VALUES (%s, %s, %s, %s, %s) RETURNING *",
         (data["title"], data.get("description", ""), True, datetime.now(timezone.utc), datetime.now(timezone.utc))
@@ -127,7 +167,8 @@ def update_task(task_id):
     })
 
 @app.route("/api/tasks/<int:task_id>", methods=["DELETE"])
-def delete_task(task_id):
+def delete_task(task_id: int) -> tuple:
+    """Supprime une tâche par son identifiant."""
     db = get_db()
     cur = db.cursor()
     cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
@@ -153,30 +194,18 @@ def search_tasks():
     return jsonify(serialized)
 
 @app.route("/api/stats", methods=["GET"])
-def get_stats():
+def get_stats() -> tuple:
+    """Retourne les statistiques globales des tâches avec cache Redis."""
     r = get_redis()
     cached = r.get("stats")
     if cached:
-        import json
         return jsonify(json.loads(cached))
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE is_active = true) as active, COUNT(*) FILTER (WHERE is_active = false) as done FROM tasks")
     stats = cur.fetchone()
-    import json
-    r.setex("stats", 1, json.dumps(dict(stats)))
+    r.setex("stats", 300, json.dumps(dict(stats)))
     return jsonify(dict(stats))
-
-def warmup_cache():
-    try:
-        r = redis.from_url(REDIS_URL)
-        r.ping()
-        import urllib.request
-        urllib.request.urlopen("http://localhost:8000/api/stats")
-    except Exception as e:
-        print(f"Cache warmup failed (non-critical): {e}")
-
-warmup_cache()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=True)

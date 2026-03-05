@@ -4,6 +4,8 @@ from typing import Optional
 
 @dataclass
 class Task:
+    """Représentation d'une tâche dans le système."""
+
     id: int
     title: str
     description: str
@@ -11,7 +13,7 @@ class Task:
     created_at: datetime
     updated_at: Optional[datetime] = None
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         return {
             "id": self.id, "title": self.title, "description": self.description,
             "is_active": self.is_active,

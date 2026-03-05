@@ -1,0 +1,42 @@
+name: "🔍 CI Quality"
+
+on:
+  push:
+    branches: [main, giovani]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.in
+          pip install pytest pytest-cov flake8 bandit mypy
+
+      - name: Lint with flake8
+        run: flake8 app.py model.py
+
+      - name: Security check with bandit
+        run: bandit -r app.py model.py -ll
+
+      - name: Type check with mypy
+        run: mypy app.py model.py --ignore-missing-imports
+
+      - name: Run tests with coverage
+        run: pytest tests/ -v --cov=. --cov-report=term-missing --cov-report=xml
+        env:
+          DATABASE_URL: "postgres://test:test@localhost:5432/testdb"
+          REDIS_URL: "redis://localhost:6379/0"
