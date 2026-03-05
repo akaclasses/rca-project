@@ -54,7 +54,7 @@ function App() {
   };
 
   return (
-    <div className="app">
+    <div className="app" data-api-path="/api/tasks">
       <header><h1>📋 Task Manager</h1><Stats apiUrl={API_URL} /></header>
       <main>
         <SearchBar onSearch={searchTasks} />

@@ -58,8 +58,6 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    volumes:
-      - ./frontend:/app
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080 || exit 1"]
       interval: 10s
