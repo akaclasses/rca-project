@@ -1,4 +1,4 @@
-version: "3.8"
+# version: "3.8"
 
 services:
   db:
@@ -17,8 +17,8 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
-    depends_on:
-      - backend
+    # depends_on:
+    #   - backend
 
   backend:
     build: ./backend
