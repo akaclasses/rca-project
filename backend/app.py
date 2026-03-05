@@ -1,4 +1,5 @@
 import os
+from collections import deque
 from datetime import datetime, timezone
 
 from flask import Flask, jsonify, request, g
@@ -6,6 +7,7 @@ from flask_cors import CORS
 import psycopg2
 import psycopg2.extras
 import redis
+from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
@@ -15,7 +17,7 @@ CORS(app)
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://taskuser:taskpass@db:5432/taskdb")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 
-search_history = []
+search_history = deque(maxlen=100)
 
 def get_db():
     if "db" not in g:
@@ -53,7 +55,14 @@ def after_request(response):
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()})
+    try:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute("SELECT 1")
+        db_status = "ok"
+    except Exception:
+        db_status = "error"
+    return jsonify({"status": "ok", "database": db_status, "timestamp": datetime.now(timezone.utc).isoformat()})
 
 @app.route("/api/tasks", methods=["GET"])
 def list_tasks():
