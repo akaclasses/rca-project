@@ -9,8 +9,8 @@ import redis
 
 app = Flask(__name__)
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://taskuser:taskpass@database:5432/taskdb")
-REDIS_URL = os.environ["REDIS_URL"]
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://taskuser:taskpass@db:5432/taskdb")
+REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 
 search_history = []
 
@@ -171,8 +171,6 @@ def warmup_cache():
     try:
         r = redis.from_url(REDIS_URL)
         r.ping()
-        import urllib.request
-        urllib.request.urlopen("http://localhost:8000/api/stats")
     except Exception as e:
         print(f"Cache warmup failed (non-critical): {e}")
 
