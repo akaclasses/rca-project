@@ -72,7 +72,7 @@ def list_tasks():
     query = "SELECT * FROM tasks"
     conditions = []
     params = []
-    if status:
+    if status in ["active", "done"]:
         conditions.append("is_active = true" if status == "active" else "is_active = false")
     if today_only:
         conditions.append("DATE(created_at) = DATE(%s)")
@@ -146,6 +146,8 @@ def delete_task(task_id):
     db = get_db()
     cur = db.cursor()
     cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
+    if cur.rowcount == 0:
+        return jsonify({"error": "Task not found"}), 404
     r = get_redis()
     r.delete("stats")
     return "", 204
@@ -183,7 +185,8 @@ def get_stats():
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE is_active = true) as active, COUNT(*) FILTER (WHERE is_active = false) as done FROM tasks")
     stats = cur.fetchone()
-    r.setex("stats", 1, json.dumps(dict(stats)))
+    import json
+    r.setex("stats", 60, json.dumps(dict(stats)))
     return jsonify(dict(stats))
 
 def warmup_cache():
