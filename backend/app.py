@@ -6,8 +6,10 @@ from flask import Flask, jsonify, request, g
 import psycopg2
 import psycopg2.extras
 import redis
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://taskuser:taskpass@db:5432/taskdb")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
@@ -62,7 +64,7 @@ def list_tasks():
     conditions = []
     params = []
     if status:
-        conditions.append("active = true" if status == "active" else "active = false")
+        conditions.append("is_active = true" if status == "active" else "is_active = false")
     if today_only:
         conditions.append("DATE(created_at) = DATE(%s)")
         params.append(datetime.now())
