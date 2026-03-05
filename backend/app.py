@@ -1,5 +1,5 @@
+import json
 import os
-from collections import deque
 from datetime import datetime, timezone
 
 from flask import Flask, jsonify, request, g
@@ -17,7 +17,6 @@ CORS(app)
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://taskuser:taskpass@db:5432/taskdb")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 
-search_history = deque(maxlen=100)
 
 def get_db():
     if "db" not in g:
@@ -158,9 +157,13 @@ def search_tasks():
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("SELECT * FROM tasks WHERE title ILIKE %s OR description ILIKE %s", (f"%{q}%", f"%{q}%"))
     results = cur.fetchall()
-    search_history.append({"query": q, "results_count": len(results), "timestamp": datetime.now().isoformat()})
-    if len(search_history) > 100:
-        search_history.pop(0)
+    try:
+        r = get_redis()
+        entry = json.dumps({"query": q, "results_count": len(results), "timestamp": datetime.now().isoformat()})
+        r.lpush("search_history", entry)
+        r.ltrim("search_history", 0, 99)
+    except Exception:
+        pass
     serialized = []
     for t in results:
         serialized.append({
@@ -175,13 +178,11 @@ def get_stats():
     r = get_redis()
     cached = r.get("stats")
     if cached:
-        import json
         return jsonify(json.loads(cached))
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE is_active = true) as active, COUNT(*) FILTER (WHERE is_active = false) as done FROM tasks")
     stats = cur.fetchone()
-    import json
     r.setex("stats", 1, json.dumps(dict(stats)))
     return jsonify(dict(stats))
 
