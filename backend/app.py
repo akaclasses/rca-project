@@ -6,8 +6,10 @@ from flask import Flask, jsonify, request, g
 import psycopg2
 import psycopg2.extras
 import redis
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://taskuser:taskpass@db:5432/taskdb")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
