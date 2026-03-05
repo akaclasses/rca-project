@@ -73,7 +73,7 @@ def list_tasks():
     query = "SELECT * FROM tasks"
     conditions = []
     params = []
-    if status:
+    if status in ["active", "done"]:
         conditions.append("is_active = true" if status == "active" else "is_active = false")
     if today_only:
         conditions.append("DATE(created_at) = DATE(%s)")
