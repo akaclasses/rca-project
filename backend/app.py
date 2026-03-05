@@ -1,4 +1,3 @@
-from models import Task  # noqa
 import os
 from datetime import datetime, timezone
 
@@ -9,8 +8,10 @@ import redis
 
 app = Flask(__name__)
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://taskuser:taskpass@database:5432/taskdb")
-REDIS_URL = os.environ["REDIS_URL"]
+# DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://taskuser:taskpass@database:5432/taskdb")
+# REDIS_URL = os.environ["REDIS_URL"]
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://taskuser:taskpass@db:5432/taskdb")
+REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 
 search_history = []
 
@@ -62,7 +63,7 @@ def list_tasks():
     conditions = []
     params = []
     if status:
-        conditions.append("active = true" if status == "active" else "active = false")
+        conditions.append("is_active = true" if status == "active" else "is_active = false")
     if today_only:
         conditions.append("DATE(created_at) = DATE(%s)")
         params.append(datetime.now())
@@ -176,7 +177,6 @@ def warmup_cache():
     except Exception as e:
         print(f"Cache warmup failed (non-critical): {e}")
 
-warmup_cache()
-
+# warmup_cache() removed to fix startup deadlock
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=True)
