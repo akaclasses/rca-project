@@ -12,6 +12,7 @@ function App() {
   const [tasks, setTasks] = useState([]);
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const fetchTasks = async () => {
     try {
@@ -28,8 +29,15 @@ function App() {
   useEffect(() => { fetchTasks(); }, [filter]);
 
   const addTask = async (task) => {
+    setError(null);
     try { await axios.post(`${API_URL}/tasks`, task); fetchTasks(); }
-    catch (err) { console.error('Failed to create task:', err); }
+    catch (err) {
+      if (err.response?.status === 409) {
+        setError('Une tâche avec ce titre existe déjà.');
+      } else {
+        setError('Erreur lors de la création de la tâche.');
+      }
+    }
   };
   const toggleTask = async (id, isActive) => {
     try { await axios.put(`${API_URL}/tasks/${id}`, { is_active: !isActive }); fetchTasks(); }
@@ -58,6 +66,7 @@ function App() {
           ))}
         </div>
         <TaskForm onSubmit={addTask} />
+        {error && <p style={{ color: '#c0392b', background: '#fdecea', padding: '10px 16px', borderRadius: 8, marginBottom: 12 }}>{error}</p>}
         {loading ? <p className="loading">Loading...</p> : <TaskList tasks={tasks} onToggle={toggleTask} onDelete={deleteTask} />}
       </main>
     </div>

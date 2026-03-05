@@ -1,13 +1,13 @@
+import json
 import os
-from collections import deque
 from datetime import datetime, timezone
 
 from flask import Flask, jsonify, request, g
 from flask_cors import CORS
 import psycopg2
 import psycopg2.extras
+import psycopg2.errors
 import redis
-from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
@@ -17,7 +17,6 @@ CORS(app)
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgres://taskuser:taskpass@db:5432/taskdb")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 
-search_history = deque(maxlen=100)
 
 def get_db():
     if "db" not in g:
@@ -100,10 +99,14 @@ def create_task():
         return jsonify({"error": "Title is required"}), 400
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(
-        "INSERT INTO tasks (title, description, is_active, created_at, updated_at) VALUES (%s, %s, %s, %s, %s) RETURNING *",
-        (data["title"], data.get("description", ""), True, datetime.now(timezone.utc), datetime.now(timezone.utc))
-    )
+    try:
+        cur.execute(
+            "INSERT INTO tasks (title, description, is_active, created_at, updated_at) VALUES (%s, %s, %s, %s, %s) RETURNING *",
+            (data["title"], data.get("description", ""), True, datetime.now(timezone.utc), datetime.now(timezone.utc))
+        )
+    except psycopg2.errors.UniqueViolation:
+        db.rollback()
+        return jsonify({"error": "A task with this title already exists"}), 409
     task = cur.fetchone()
     r = get_redis()
     r.delete("stats")
@@ -156,9 +159,13 @@ def search_tasks():
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("SELECT * FROM tasks WHERE title ILIKE %s OR description ILIKE %s", (f"%{q}%", f"%{q}%"))
     results = cur.fetchall()
-    search_history.append({"query": q, "results_count": len(results), "timestamp": datetime.now().isoformat()})
-    if len(search_history) > 100:
-        search_history.pop(0)
+    try:
+        r = get_redis()
+        entry = json.dumps({"query": q, "results_count": len(results), "timestamp": datetime.now().isoformat()})
+        r.lpush("search_history", entry)
+        r.ltrim("search_history", 0, 99)
+    except Exception:
+        pass
     serialized = []
     for t in results:
         serialized.append({
@@ -173,7 +180,6 @@ def get_stats():
     r = get_redis()
     cached = r.get("stats")
     if cached:
-        import json
         return jsonify(json.loads(cached))
     db = get_db()
     cur = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
