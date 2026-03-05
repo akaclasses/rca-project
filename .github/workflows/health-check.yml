@@ -1,0 +1,67 @@
+name: "🩺 RCA Health Check"
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Only run on student forks, not on the source repo
+    if: github.repository != 'akaclasses/rca-project'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq curl python3 python3-pip
+          pip3 install requests psycopg2-binary redis
+
+      - name: Build & start services
+        run: |
+          docker compose build --no-cache 2>&1 | tee /tmp/build.log
+          docker compose up -d
+        continue-on-error: true
+
+      - name: Wait for services
+        continue-on-error: true
+        run: |
+          echo "⏳ Waiting for services to start..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+              echo "✅ Backend ready"
+              break
+            fi
+            sleep 2
+          done
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:3000 > /dev/null 2>&1; then
+              echo "✅ Frontend ready"
+              break
+            fi
+            sleep 2
+          done
+          docker compose ps || true
+
+      - name: Run health checks
+        if: always()
+        run: python3 checks/run_checks.py
+        continue-on-error: true
+
+      - name: Publish report
+        if: always()
+        run: |
+          mkdir -p docs
+          cp report.json docs/report.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/report.json
+          git diff --cached --quiet || git commit -m "📊 Update health check report [skip ci]"
+          git push
